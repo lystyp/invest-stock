@@ -1,12 +1,25 @@
-from flask import Flask
-
+from flask import Flask, request, render_template, redirect, url_for
 app = Flask(__name__)
-@app.route("/")
-def hello():
-    return "Hello, World!"
 
-if __name__ == "__main__":
-    # Setting debug to True enables debug output. This line should be
-    # removed before deploying a production app.
-    app.debug = True
+@app.route('/')
+def formPage():
+    return render_template('git home.html')
+
+@app.route('/submit', methods=['POST', 'GET'])
+def submit():
+    # 看起來request是只有一個instance會一直被新的instance蓋掉的樣子
+    if request.method == 'POST':
+        user = request.form['user']
+        print("post : user => ", user)
+        return redirect(url_for('success', name=user, action="post"))
+    else:
+        user = request.args.get('user')
+        print("get : user => ", user)
+        return redirect(url_for('success', name=user, action="get"))
+
+@app.route('/success/<action>/<name>')
+def success(name, action):
+    return '{} : Welcome {} ~ !!!'.format(action, name)
+
+if __name__ == '__main__':
     app.run()
