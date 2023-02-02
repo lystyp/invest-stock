@@ -4,20 +4,77 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Form - Submit</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+    <title>WebAPI</title>
 </head>
 <body>
-    <h2>POST</h2>
-    <form action="/submit" method="post">
-        <h2>Enter Name:</h2>
-        <p><input type="text" name="user" /></p>
-        <p><input type="submit" value="submit" /></p>
-    </form>
-    <h2>GET</h2>
-    <form action="/submit" method="get">
-        <h2>Enter Name:</h2>
-        <p><input type="text" name="user" /></p>
-        <p><input type="submit" value="submit" /></p>
-    </form>
+    <h1>DATA : API</h1>
+    <h2>API : GET</h2>
+    <button id='btnGet'>GET</button>
+    <hr>
+    <h2>API : POST</h2>
+    <p>APP_ID :
+        <input id="app_id" name="app_id" type="number" />
+    </p>
+    <p>APP_NAME :
+        <input id="app_name" name="app_name" type="text" />
+    </p>
+    <button id="btnPost">POST</button>
+    <hr>
+    <h3>Console : </h3>
+    <div id="console"></div>
+    <script>
+        $(function () {
+            console.log("Html load finished.");
+            var $btnGet = $('#btnGet');
+            var $console = $('#console');
+            var $btnPost = $('#btnPost');
+
+            var $edtAppId = $('#app_id');
+            var $edtAppName = $('#app_name');
+            
+            $btnGet.off('click').on('click', function () {
+                $.ajax({
+                    url: '/data/message',
+                    data: {},
+                    type: 'GET',
+                    success: function (data) {
+                        console.log("====================");
+                        console.log(data);
+                        console.log("====================");
+                        $console.text("");
+                        $console.append("data[id] : " + data.appInfo.id + "---");
+                        $console.append("data[name] : " + data.appInfo.name + "---");
+
+                        $edtAppId.val(data.appInfo.id);
+                        $edtAppName.val(data.appInfo.name);
+                    },
+                    error: function (xhr) {
+                        console.log("====================");
+                        console.log(xhr);
+                        console.log("====================");
+                        alert('Ajax request 發生錯誤');
+                    }
+                });
+            })
+            $btnPost.off('click').on('click',function(){
+                $.ajax({
+                    url: '/data/message',
+                    data: {
+                        "app_id" : $edtAppId.val() , 
+                        "app_name" : $edtAppName.val(),
+                    },
+                    type: 'POST',
+                    success: function (data) {
+                        $console.text("result = ");
+                        $console.append(data.result);
+                    },
+                    error: function (xhr) {
+                        alert('Ajax request 發生錯誤');
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>

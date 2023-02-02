@@ -1,25 +1,33 @@
-from flask import Flask, request, render_template, redirect, url_for
+from flask import Flask, render_template, request, jsonify, json
 app = Flask(__name__)
 
 @app.route('/')
-def formPage():
-    return render_template('git home.html')
+def webapi():
+    return render_template('home.html')
 
-@app.route('/submit', methods=['POST', 'GET'])
-def submit():
-    # 看起來request是只有一個instance會一直被新的instance蓋掉的樣子
-    if request.method == 'POST':
-        user = request.form['user']
-        print("post : user => ", user)
-        return redirect(url_for('success', name=user, action="post"))
-    else:
-        user = request.args.get('user')
-        print("get : user => ", user)
-        return redirect(url_for('success', name=user, action="get"))
+@app.route('/data/message', methods=['GET'])
+def getDataMessage():
+    if request.method == "GET":
+        with open('data/message.json', 'r') as f:
+            data = json.load(f)
+            print("text : ", data)
+        f.close
+        return jsonify(data)  # 直接回傳 data 也可以，都是 json 格式
 
-@app.route('/success/<action>/<name>')
-def success(name, action):
-    return '{} : Welcome {} ~ !!!'.format(action, name)
+@app.route('/data/message', methods=['POST'])
+def setDataMessage():
+    if request.method == "POST":
+        data = {
+            'appInfo': {
+                'id': request.form['app_id'],
+                'name': request.form['app_name'],
+            }
+        }
+        print(type(data))
+        with open('data/message.json', 'w') as f:
+            json.dump(data, f)
+        f.close
+        return jsonify(result='OK')
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host="0.0.0.0")
