@@ -1,3 +1,5 @@
+# -*- coding: UTF-8 -*-
+
 from flask import Flask, render_template, request, jsonify, json
 app = Flask(__name__)
 
@@ -30,4 +32,4 @@ def setDataMessage():
         return jsonify(result='OK')
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0")
+    app.run(host="0.0.0.0",debug=True)
