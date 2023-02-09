@@ -7,6 +7,8 @@ from .financial_statement import html2db
 from requests.exceptions import ConnectionError
 from requests.exceptions import ReadTimeout
 import warnings
+import json
+import sqlalchemy
 
 
 import random
@@ -290,7 +292,7 @@ def find_best_session():
             ses = requests.Session()
             ses.get('https://www.twse.com.tw/zh/', headers=headers, timeout=10)
             ses.headers.update(headers)
-            print('成功！')
+            print('獲取Session成功！')
             return ses
         except (ConnectionError, ReadTimeout) as error:
             print(error)
@@ -316,8 +318,8 @@ def requests_get(*args1, **args2):
             return ses.get(*args1, timeout=10, **args2)
         except (ConnectionError, ReadTimeout) as error:
             print(error)
-            print('retry one more time after 60s', i, 'times left')
-            time.sleep(60)
+            print('retry one more time after 15s', i, 'times left')
+            time.sleep(15)
             ses = find_best_session()
 
         i -= 1
@@ -647,22 +649,23 @@ def season_range(start_date, end_date):
     return ret
 
 def table_exist(conn, table):
-    return list(conn.execute(
-        "select count(*) from sqlite_master where type='table' and name='" + table + "'"))[0][0] == 1
+    cursor = conn.execute(sqlalchemy.text("SHOW TABLES LIKE '" + table + "';"))
+    return len(cursor.fetchall()) > 0
+        
 
 def table_latest_date(conn, table):
-    cursor = conn.execute('SELECT date FROM ' + table + ' ORDER BY date DESC LIMIT 1;')
-    return datetime.datetime.strptime(list(cursor)[0][0], '%Y-%m-%d %H:%M:%S')
+    cursor = conn.execute(sqlalchemy.text('SELECT date FROM ' + table + ' ORDER BY date DESC LIMIT 1;'))
+    return list(cursor)[0][0]
 
 def table_earliest_date(conn, table):
-    cursor = conn.execute('SELECT date FROM ' + table + ' ORDER BY date ASC LIMIT 1;')
-    return datetime.datetime.strptime(list(cursor)[0][0], '%Y-%m-%d %H:%M:%S')
+    cursor = conn.execute(sqlalchemy.text('SELECT date FROM ' + table + ' ORDER BY date ASC LIMIT 1;'))
+    return list(cursor)[0][0]
 
 def add_to_sql(conn, name, df):
 
-    # get the existing dataframe in sqlite3
+    # get the existing dataframe in database
     exist = table_exist(conn, name)
-    ret = pd.read_sql('select * from ' + name, conn, index_col=['stock_id', 'date']) if exist else pd.DataFrame()
+    ret = pd.read_sql(sqlalchemy.text('select * from ' + name), conn, index_col=['stock_id', 'date']) if exist else pd.DataFrame()
 
     # add new df to the dataframe
     ret = ret.append(df)
@@ -671,13 +674,17 @@ def add_to_sql(conn, name, df):
     ret['date'] = pd.to_datetime(ret['date'])
     ret = ret.dropna(subset=['date']).drop_duplicates(['stock_id', 'date'], keep='last')
     ret = ret.sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
-
     # add the combined table
     ret.to_csv('backup.csv')
-
     try:
-        ret.to_sql(name, conn, if_exists='replace')
-    except:
+        # 這裡有大bug啦!!! conn參數不是丟connection，是丟engine，否則table會是空的(不知道是不是只有MySQL會這樣)
+        # https://stackoverflow.com/questions/48307008/pandas-to-sql-doesnt-insert-any-data-in-my-table
+
+        # 要存回MySQL因為string型態不能當index及key，所以要把string改成varchar
+        ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+        print("Insert data to sql success.")
+    except Exception as ex:
+        print("Insert data to sql error :" + str(ex))
         ret = pd.read_csv('backup.csv', parse_dates=['date'], dtype={'stock_id':str})
         ret['stock_id'] = ret['stock_id'].astype(str)
         ret.set_index(['stock_id', 'date'], inplace=True)
@@ -686,19 +693,14 @@ def add_to_sql(conn, name, df):
 
 def update_table(conn, table_name, crawl_function, dates):
 
-
     print('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
 
     df = pd.DataFrame()
     dfs = {}
 
-    progress = tqdm_notebook(dates, )
-
-    for d in progress:
+    for d in dates:
 
         print('crawling', d)
-        progress.set_description('crawl' + table_name + str(d))
-
         data = crawl_function(d)
 
         if data is None:
@@ -715,16 +717,18 @@ def update_table(conn, table_name, crawl_function, dates):
         # update single dataframe
         else:
             df = df.append(data)
-            print('success')
+            print('update data in date : ' + str(d) + ' success')
 
 
         if len(df) > 50000:
             add_to_sql(conn, table_name, df)
             df = pd.DataFrame()
             print('save', len(df))
-
+        
+        print('wait 15 secs before next data')
         time.sleep(15)
 
+    print('update data, download all data success.')
 
 
     if df is not None and len(df) != 0:
@@ -738,46 +742,48 @@ def update_table(conn, table_name, crawl_function, dates):
                 add_to_sql(conn, i, d)
 
 
-import ipywidgets as widgets
-from IPython.display import display
+# ===================================
+# 下面這是for jupyter的UI用的
+# import ipywidgets as widgets
+# from IPython.display import display
 
 
-def widget(conn, table_name, crawl_func, range_date):
+# def widget(conn, table_name, crawl_func, range_date):
 
-    date_picker_from = widgets.DatePicker(
-        description='from',
-        disabled=False,
-    )
+#     date_picker_from = widgets.DatePicker(
+#         description='from',
+#         disabled=False,
+#     )
 
-    if table_exist(conn, table_name):
-        date_picker_from.value = table_latest_date(conn, table_name)
+#     if table_exist(conn, table_name):
+#         date_picker_from.value = table_latest_date(conn, table_name)
 
-    date_picker_to = widgets.DatePicker(
-        description='to',
-        disabled=False,
-    )
+#     date_picker_to = widgets.DatePicker(
+#         description='to',
+#         disabled=False,
+#     )
 
-    date_picker_to.value = datetime.datetime.now().date()
+#     date_picker_to.value = datetime.datetime.now().date()
 
-    btn = widgets.Button(description='update ')
+#     btn = widgets.Button(description='update ')
 
-    def onupdate(x):
-        dates = range_date(date_picker_from.value, date_picker_to.value)
+#     def onupdate(x):
+#         dates = range_date(date_picker_from.value, date_picker_to.value)
 
-        if len(dates) == 0:
-            print('no data to parse')
+#         if len(dates) == 0:
+#             print('no data to parse')
 
-        update_table(conn, table_name, crawl_func, dates)
+#         update_table(conn, table_name, crawl_func, dates)
 
-    btn.on_click(onupdate)
+#     btn.on_click(onupdate)
 
-    if table_exist(conn, table_name):
-        label = widgets.Label(table_name +
-                              ' (from ' + table_earliest_date(conn, table_name).strftime('%Y-%m-%d') +
-                              ' to ' + table_latest_date(conn, table_name).strftime('%Y-%m-%d') + ')')
-    else:
-        label = widgets.Label(table_name + ' (No table found)(對於finance_statement是正常情況)')
+#     if table_exist(conn, table_name):
+#         label = widgets.Label(table_name +
+#                               ' (from ' + table_earliest_date(conn, table_name).strftime('%Y-%m-%d') +
+#                               ' to ' + table_latest_date(conn, table_name).strftime('%Y-%m-%d') + ')')
+#     else:
+#         label = widgets.Label(table_name + ' (No table found)(對於finance_statement是正常情況)')
 
-    items = [date_picker_from, date_picker_to, btn]
-    display(widgets.VBox([label, widgets.HBox(items)]))
+#     items = [date_picker_from, date_picker_to, btn]
+#     display(widgets.VBox([label, widgets.HBox(items)]))
 
