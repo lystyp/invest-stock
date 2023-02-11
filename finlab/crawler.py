@@ -395,16 +395,17 @@ def crawl_monthly_report(date):
     try:
         r = requests_get(url, headers=headers, verify=False)
         r.encoding = 'big5'
-    except:
-        print('**WARRN: requests cannot get html')
+
+    except Exception as ex:
+        print('**WARRN: requests cannot get html in crawl_monthly_report : ' + str(ex))
         return None
 
     import lxml
 
     try:
         html_df = pd.read_html(StringIO(r.text))
-    except:
-        print('**WARRN: Pandas cannot find any table in the HTML file')
+    except Exception as ex:
+        print('**WARRN: Pandas cannot find any table in the HTML file : ' + str(ex))
         return None
 
     # 處理一下資料
@@ -420,6 +421,10 @@ def crawl_monthly_report(date):
         column_index = df.index[(df[0] == '公司代號')][0]
         df.columns = df.iloc[column_index]
 
+    # 如果表格太窄導致某個欄名稱換行，df裡面會變成空格
+    for col in df.columns:
+        df.rename(columns = {col : col.replace(" ", "")}, inplace = True)
+    
     df['當月營收'] = pd.to_numeric(df['當月營收'], 'coerce')
     df = df[~df['當月營收'].isnull()]
     df = df[df['公司代號'] != '合計']
@@ -537,8 +542,8 @@ def crawl_finance_statement(year, season, stock_ids):
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36',
         }
         pbar = tqdm(stock_ids)
-        for i in pbar:
-
+        for i in stock_ids:
+            print("Handle stock : " + str(i) + ", year : " + str(year) + ", season : " + str(season) + ", type : " + report_type)
             # check if the html is already parsed
             file = os.path.join(directory, str(i) + '.html')
             if os.path.exists(file) and os.stat(file).st_size > 20000:
@@ -556,9 +561,9 @@ def crawl_finance_statement(year, season, stock_ids):
 
             print(url)
             try:
-                r = requests_get(url, headers=headers, timeout=30)
-            except:
-                print('**WARRN: requests cannot get stock', i, '.html')
+                r = requests_get(url, headers=headers)
+            except Exception as ex:
+                print('**WARRN: requests cannot get stock', i, '.html : ' + str(ex))
                 time.sleep(25 + random.uniform(0, 10))
                 continue
 
@@ -585,35 +590,6 @@ def crawl_finance_statement(year, season, stock_ids):
         download_html(year, season, stock_ids, 'B')
     else:
         download_html(year, season, stock_ids, 'C')
-
-
-
-def crawl_finance_statement_by_date(date):
-    year = date.year
-    if date.month == 3:
-        season = 4
-        year = year - 1
-        month = 11
-    elif date.month == 5:
-        season = 1
-        month = 2
-    elif date.month == 8:
-        season = 2
-        month = 5
-    elif date.month == 11:
-        season = 3
-        month = 8
-    else:
-        return None
-
-
-    if year >= 2019:
-        crawl_finance_statement2019(year, season)
-    else:
-        df = crawl_monthly_report(datetime.datetime(year, month, 1))
-        crawl_finance_statement(year, season, df.index.levels[0])
-    html2db(date)
-    return {}
 
 import datetime
 import time
@@ -676,6 +652,7 @@ def add_to_sql(conn, name, df):
     ret = ret.sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
     # add the combined table
     ret.to_csv('backup.csv')
+    print("Add data to sql.")
     try:
         # 這裡有大bug啦!!! conn參數不是丟connection，是丟engine，否則table會是空的(不知道是不是只有MySQL會這樣)
         # https://stackoverflow.com/questions/48307008/pandas-to-sql-doesnt-insert-any-data-in-my-table
@@ -688,11 +665,12 @@ def add_to_sql(conn, name, df):
         ret = pd.read_csv('backup.csv', parse_dates=['date'], dtype={'stock_id':str})
         ret['stock_id'] = ret['stock_id'].astype(str)
         ret.set_index(['stock_id', 'date'], inplace=True)
-        ret.to_sql(name, conn, if_exists='replace')
+        ret.to_sql(name, conn, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
 
 
-def update_table(conn, table_name, crawl_function, dates):
-
+def update_price_table(conn, dates):
+    crawl_function = crawl_price
+    table_name = 'price'
     print('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
 
     df = pd.DataFrame()
@@ -741,49 +719,108 @@ def update_table(conn, table_name, crawl_function, dates):
                 print('save df', d.head())
                 add_to_sql(conn, i, d)
 
+def update_monthly_revenue_table(conn, dates):
+    crawl_function = crawl_monthly_report
+    table_name = 'monthly_revenue'
+    print('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
 
-# ===================================
-# 下面這是for jupyter的UI用的
-# import ipywidgets as widgets
-# from IPython.display import display
+    df = pd.DataFrame()
+    dfs = {}
+
+    for d in dates:
+
+        print('crawling', d)
+        data = crawl_function(d)
+
+        if data is None:
+            print('fail, check if it is a holiday')
+
+        # update multiple dataframes
+        elif isinstance(data, dict):
+            if len(dfs) == 0:
+                dfs = {i:pd.DataFrame() for i in data.keys()}
+
+            for i, d in data.items():
+                dfs[i] = dfs[i].append(d)
+
+        # update single dataframe
+        else:
+            df = df.append(data)
+            print('update data in date : ' + str(d) + ' success')
 
 
-# def widget(conn, table_name, crawl_func, range_date):
+        if len(df) > 50000:
+            add_to_sql(conn, table_name, df)
+            df = pd.DataFrame()
+            print('save', len(df))
+        
+        print('wait 15 secs before next data')
+        time.sleep(15)
 
-#     date_picker_from = widgets.DatePicker(
-#         description='from',
-#         disabled=False,
-#     )
+    print('update data, download all data success.')
 
-#     if table_exist(conn, table_name):
-#         date_picker_from.value = table_latest_date(conn, table_name)
 
-#     date_picker_to = widgets.DatePicker(
-#         description='to',
-#         disabled=False,
-#     )
+    if df is not None and len(df) != 0:
+        add_to_sql(conn, table_name, df)
 
-#     date_picker_to.value = datetime.datetime.now().date()
+    if len(dfs) != 0:
+        for i, d in dfs.items():
+            print('saveing df', d.head(), len(d))
+            if len(d) != 0:
+                print('save df', d.head())
+                add_to_sql(conn, i, d)
 
-#     btn = widgets.Button(description='update ')
+# 每年的 3/31, 5/15, 8/14, 11/14 當作撈四季財報的日期
+# 由於撈財報存成table的作法是先把時間內的html撈下來，然後再讀到df裡面，最後存到db蓋掉原本的表格，
+# 如果我db原本有十年的，但html只有最新一年的，那我更新近一年的就會把原本十年的table給蓋掉了!
+# 我之後再改成用跟財報和月報一樣的方法，就是讀table進來跟新資料合併，刪除重複的再更新回db的做法
+# 還沒改之前先不要亂用這個好了
+def update_finance_statement_table(conn, dates):
+    if len(dates) == 0:
+        print("There is no data between dates.")
+        return
 
-#     def onupdate(x):
-#         dates = range_date(date_picker_from.value, date_picker_to.value)
+    print('start craw lfinance_statement from ', dates[0] , 'to', dates[-1])
 
-#         if len(dates) == 0:
-#             print('no data to parse')
+    for d in dates:
 
-#         update_table(conn, table_name, crawl_func, dates)
+        print('crawling', d)
+        year = d.year
+        if d.month == 3:
+            season = 4
+            year = year - 1
+            month = 11
+        elif d.month == 5:
+            season = 1
+            month = 2
+        elif d.month == 8:
+            season = 2
+            month = 5
+        elif d.month == 11:
+            season = 3
+            month = 8
+        else:
+            return None
+        
+        # 2019年以前需要一個公司一個公司的財報分開下載，2019年之後可以全部公司的財報一次下載下來
+        if year >= 2019:
+            crawl_finance_statement2019(year, season)
+        else:
+            df = crawl_monthly_report(datetime.datetime(year, month, 1))
+            crawl_finance_statement(year, season, df.index.levels[0])
+        html2db(conn, d)
 
-#     btn.on_click(onupdate)
+def get_db_connection():
+    # 資料庫設定
+    db_settings = {}
+    with open('db_login_information.json', 'r') as file:
+        db_settings = json.load(file)
 
-#     if table_exist(conn, table_name):
-#         label = widgets.Label(table_name +
-#                               ' (from ' + table_earliest_date(conn, table_name).strftime('%Y-%m-%d') +
-#                               ' to ' + table_latest_date(conn, table_name).strftime('%Y-%m-%d') + ')')
-#     else:
-#         label = widgets.Label(table_name + ' (No table found)(對於finance_statement是正常情況)')
-
-#     items = [date_picker_from, date_picker_to, btn]
-#     display(widgets.VBox([label, widgets.HBox(items)]))
-
+    engine = sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}:{port}/{db}'.format(
+        user = db_settings["user"], 
+        password = db_settings["password"],
+        host = db_settings["host"],
+        port = db_settings["port"], 
+        db = db_settings["db"]
+    ))
+    return engine.connect()

@@ -7,6 +7,8 @@ import os
 import pickle
 import datetime
 import re
+import time
+import sqlalchemy
 
 def requests_get(*args1, **args2):
     i = 3
@@ -92,8 +94,8 @@ def pack_htmls(year, season, directory):
     income_sheet = {}
     cash_flows = {}
     income_sheet_cumulate = {}
-    pbar = tqdm(os.listdir(directory))
-
+    print(os.listdir(directory))
+    pbar = tqdm(os.listdir(directory)[0:2])
     for i in pbar:
 
         # 將檔案路徑建立好
@@ -153,7 +155,6 @@ def pack_htmls(year, season, directory):
         df = dfs[3].copy().drop_duplicates(subset=0, keep='last')
         df = df.set_index(0)
         cash_flows[stock_id] = df[1].dropna()
-    
     # 將dictionary整理成dataframe
     balance_sheet = pd.DataFrame(balance_sheet)
     income_sheet = pd.DataFrame(income_sheet)
@@ -201,7 +202,6 @@ def combine(d):
 def fill_season4(tbs):
     # copy income sheet (will modify it later)
     income_sheet = tbs['income_sheet'].copy()
-    
     # calculate the overlap columns
     c1 = set(tbs['income_sheet'].columns)
     c2 = set(tbs['income_sheet_cumulate'].columns)
@@ -213,7 +213,6 @@ def fill_season4(tbs):
 
     # get all years
     years = set(tbs['income_sheet_cumulate'].index.levels[1].year)
-    
     for y in years:
         
         # get rows of the dataframe that is season 4
@@ -245,20 +244,20 @@ def fill_season4(tbs):
         income_sheet = income_sheet.append(diff)
         
     # 排序好並更新tbs
-    income_sheet = income_sheet.reset_index().sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
+    # 如果財報資料太少，income_sheet會是空的，不知道為何，沒有深入研究
+    if income_sheet.empty:
+        income_sheet = income_sheet.reset_index().sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
     tbs['income_sheet'] = income_sheet
 
-def to_db(tbs):
-    import sqlite3
+def to_db(conn, tbs):
     print('save table to db')
-    conn = sqlite3.connect(os.path.join('data', 'data.db'))
     for i, df in tbs.items():
         print('  ', i)
         df = df.reset_index().sort_values(['stock_id', 'date']).drop_duplicates(['stock_id', 'date']).set_index(['stock_id', 'date'])
-        df[df.count().nlargest(900).index].to_sql(i, conn, if_exists='replace')
+        df[df.count().nlargest(900).index].to_sql(i, conn, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
         
         
-def html2db(date):
+def html2db(conn, date):
     year = date.year
     if date.month == 3:
         season = 4
@@ -276,10 +275,12 @@ def html2db(date):
     else:
         return None
     
+    # 把下載下來的html全部轉DataFrame之後存成pickle
     pack_htmls(year, season, os.path.join('data', 'financial_statement', str(year) + str(season)))
+    # 再讀出來，然後不知道怎麼搞，就全都並在一起
     d = get_all_pickles(os.path.join('data', 'financial_statement'))
     tbs = combine(d)
     fill_season4(tbs)
-    to_db(tbs)
-    return {}
+    # 最後存進DB
+    to_db(conn, tbs)
     
