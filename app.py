@@ -32,4 +32,12 @@ def setDataMessage():
         return jsonify(result='OK')
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0",debug=True)
+    # app.run(host="0.0.0.0",debug=True)
+    import finlab.crawler as cr
+    import sqlalchemy
+    conn = cr.get_db_connection()
+    while(True):
+        cmd = input('Command : \n')
+        cur = conn.execute(sqlalchemy.text(cmd))
+        print(list(cur))
+    
