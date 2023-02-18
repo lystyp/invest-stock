@@ -1,4 +1,4 @@
-from finlab import data, login
+from utils import data, login
 
 
 print(login('HnyHspapktWgWVzmrieyK1kC+N2Gc3IDxbG+Xz5fYFt7XdbeMvodY5oQbkt5LA30#free')) # api token from https://ai.finlab.tw/api_token

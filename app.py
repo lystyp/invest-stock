@@ -33,7 +33,7 @@ def setDataMessage():
 
 if __name__ == '__main__':
     # app.run(host="0.0.0.0",debug=True)
-    import finlab.crawler as cr
+    import utils.crawler as cr
     import sqlalchemy
     conn = cr.get_db_connection()
     while(True):

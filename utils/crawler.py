@@ -1,9 +1,10 @@
+# -*- coding: UTF-8 -*-
 import requests
 from io import StringIO
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from .financial_statement import html2db
+from financial_statement import html2db
 from requests.exceptions import ConnectionError
 from requests.exceptions import ReadTimeout
 import warnings
@@ -813,7 +814,7 @@ def update_finance_statement_table(conn, dates):
 def get_db_connection():
     # 資料庫設定
     db_settings = {}
-    with open('db_login_information.json', 'r') as file:
+    with open('../authentication/db_login_information.json', 'r') as file:
         db_settings = json.load(file)
 
     engine = sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}:{port}/{db}'.format(
