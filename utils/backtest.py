@@ -37,12 +37,14 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
         else:
             return date
     
+    # 就是產生從開始到結束的每個周期的日期啦，只是把list改成用yield產生
     def date_iter_periodicity(start_date, end_date, hold_days):
         date = start_date
         while date < end_date:
             yield (date), (date + datetime.timedelta(hold_days))
             date += datetime.timedelta(hold_days)
-                
+
+    # holddays也可以不要固定周期，自己填一個list決定多久要update一次策略選股
     def date_iter_specify_dates(start_date, end_date, hold_days):
         dlist = [start_date] + hold_days + [end_date]
         if dlist[0] == dlist[1]:
@@ -64,18 +66,22 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
         
         # select stocks at date
         data.date = sdate
+        # stocks是一個series，index是stock id，value是True
         stocks = strategy(data)
         
         # hold the stocks for hold_days day
+        # 取得選股中一個週期中去掉開始天的所有股價
+        # 為什麼要去掉開始天 ? 因為都是根據開始天的收盤價在隔天買，所以花的是隔天收盤價的錢
         s = price[stocks.index & price.columns][sdate:edate].iloc[1:]
         
-        
+        # 假如剛好開始結束日都在周末就會是空的吧我猜
         if s.empty:
             s = pd.Series(1, index=pd.date_range(sdate + datetime.timedelta(days=1), edate))
         else:
-            
             if stop_loss != None:
+                # 假如我跌了stop_loss% 就停損
                 below_stop = ((s / s.bfill().iloc[0]) - 1)*100 < -np.abs(stop_loss)
+                # 為什麼要shift(2) > 假如我在day n 發現要停損了，我就會用day + 1的金額賣，所以day + 2開始的金額都沒有用了，shift 2就是在把後面的價格清掉
                 below_stop = (below_stop.cumsum() > 0).shift(2).fillna(False)
                 s[below_stop] = np.nan
                 
@@ -103,6 +109,7 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
                 
             # calculate equality
             # normalize and average the price of each stocks
+            # 看是要用百分比來算還是用價格來算，average是百分比
             if weight == 'average':
                 s = s/s.bfill().iloc[0]
             s = s.mean(axis=1)
@@ -111,24 +118,29 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
         # print some log
         print(sdate,'-', edate, 
               '報酬率: %.2f'%( s.iloc[-1]/s.iloc[0] * 100 - 100), 
-              '%', 'nstock', len(stocks))
+              '%', '公司數:', len(stocks))
         maxreturn = max(maxreturn, s.iloc[-1]/s.iloc[0] * 100 - 100)
         minreturn = min(minreturn, s.iloc[-1]/s.iloc[0] * 100 - 100)
         
         # plot backtest result
         ((s*end-1)*100).plot()
+        # equality 就是所有決策股票的平均損益啦(可能是價格或百分比)，每個周期都會多一堆
         equality = equality.append(s*end)
+        # 因為不確定前面weught是average還是price，這邊要算最後資金剩多少還是要用百分比乘本金，所以統一除於s[0]再乘本金
         end = (s/s[0]*end).iloc[-1]
         
         if math.isnan(end):
             end = 1
         
         # add nstock history
+        # 表示這一個週期買了幾支股票
         nstock[sdate] = len(stocks)
         
+    # 用來記錄所有週期跑下來最高盈利跟最高損益分別是多少，每個週期更新一次
     print('每次換手最大報酬 : %.2f ％' % maxreturn)
     print('每次換手最少報酬 : %.2f ％' % minreturn)
     
+    # 要以哪一支股票為基準來跟自己的策略比較，這裡只有0050，要用別支的話要自己改一下
     if benchmark is None:
         benchmark = price['0050'][start_date:end_date].iloc[1:]
     
@@ -146,6 +158,7 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
     plt.ylabel('Number of stocks held')
     return equality, transections
 
+# 這個是在算資金要怎麼分給這些股票
 def portfolio(stock_list, money, data, lowest_fee=20, discount=0.6, add_cost=10):
     price = data.get('收盤價', 1)
     stock_list = price.iloc[-1][stock_list].transpose()
