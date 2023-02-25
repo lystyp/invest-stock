@@ -87,7 +87,7 @@ class Data():
         # 從資料庫中拿取所需的資料
         s = ("""SELECT stock_id, date, %s FROM %s WHERE date BETWEEN '%s' AND '%s'"""%(name, 
             self.col2table[name], str(enddate.strftime('%Y-%m-%d')), 
-            str((self.date + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))))
+            str((self.date).strftime('%Y-%m-%d'))))
         ret = pd.read_sql(sqlalchemy.text(s), self.conn, parse_dates=['date']).pivot(index='date', columns='stock_id')[name]
         
         # 將這些資料存入cache，以便將來要使用時，不需要從資料庫額外調出來
