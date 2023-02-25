@@ -19,6 +19,13 @@ def get_daily_order(recommand_order):
     # 拿到推薦股票後，看那些股是已經有買的，哪些是還沒買的，錢還剩多少可以買，要賣哪些，總之這裡就是看錢要怎麼安排
     pass
 
+class Stock:
+    def __init__(self, stock_id, bought_time, cost, amount) -> None:
+        self.stock_id = stock_id
+        self.bought_time = bought_time
+        self.cost = cost
+        self.amount = amount
+
 if __name__ == '__main__':
     # login_info = {}
     # with open('../authentication/shioaji_login_information.json', 'r') as file:

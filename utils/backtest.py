@@ -4,7 +4,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
 import math
+from strategy import Strategy
+from stock_order import Stock
+import logging_util
 
+log = logging_util.Logger("Backtest")
+ 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 def backtest(start_date, end_date, hold_days, strategy, data, weight='average', benchmark=None, stop_loss=None, stop_profit=None):
@@ -158,26 +163,139 @@ def backtest(start_date, end_date, hold_days, strategy, data, weight='average', 
     plt.ylabel('Number of stocks held')
     return equality, transections
 
+def backtest2(start_date, end_date, hold_days, strategy, data, cost, discount=1):
+    log.d("開始回測, from " + start_date.strftime("%Y-%m-%d") + " to " + end_date.strftime("%Y-%m-%d") + ", 初始資金 :" + str(cost))
+    # get price data in order backtest
+    data.date = end_date
+    price = data.get('收盤價', (end_date - start_date).days)
+    strategy : Strategy = strategy
+
+    own_stocks = {}
+    earn_money = 0
+
+    def trading_day(date):
+        if date not in price.index:
+            temp = price.loc[date:]
+            if temp.empty:
+                return price.index[-1]
+            else:
+                return temp.index[0]
+        else:
+            return date
+    sdate = trading_day(start_date)
+    edate = trading_day(sdate + datetime.timedelta(hold_days))
+    while sdate < end_date:
+        log.d("==================================================")
+        # select stocks at date
+        data.date = sdate
+        sell_list  = strategy.sell_list(data, own_stocks)
+        buy_list = strategy.buy_list(data)
+        buy_dict = portfolio(buy_list, money=cost, data=data)
+        # stocks是一個series，index是stock id，value是True
+        stocks = pd.Series(data=True, index=buy_list + sell_list)
+
+        # hold the stocks for hold_days day
+        # 取得選股中一個週期中去掉開始天的所有股價
+        # 為什麼要去掉開始天 ? 因為都是根據開始天的收盤價在隔天買，所以花的是隔天收盤價的錢
+        s = price[stocks.index & price.columns][sdate:edate].iloc[1:]
+        
+        # 假如剛好開始結束日都在周末就會是空的吧我猜
+        log.d(sdate.strftime("%Y-%m-%d") + " to " + edate.strftime("%Y-%m-%d"))
+        if s.empty:
+            log.e("無收盤資料，應為假日")
+            continue
+        else:
+            log.d("賣出 : " + str(sell_list))
+            # 先賣
+            for stock_id in sell_list:
+                stock : Stock = own_stocks[stock_id]
+                real_price = int(s[stock_id].iloc[0] * stock.amount * 1000 * (1 - 0.001425 * discount - 0.003)) 
+                cost += real_price
+                own_stocks.pop(stock_id)
+                log.d("賣出 : " + stock_id + ", 數量 : " + '{:.3f}'.format(stock.amount) + ", 股價 : " + str(s[stock_id].iloc[0]) 
+                + ", 原股價 : " + str(stock.cost) + ", 持有天數 : " + str((sdate - stock.bought_time).days))
+                earn_money += (real_price - int(stock.cost * stock.amount * 1000 * (1 + 0.001425 * discount)))
+            # 再買 
+            for stock_id in buy_dict.keys():
+                stock = Stock(stock_id, sdate, s[stock_id].iloc[0], buy_dict[stock_id])
+                real_price = int(s[stock_id].iloc[0] * stock.amount * 1000 * (1 + 0.001425 * discount))
+                if stock_id in own_stocks.keys():
+                    log.e(stock_id + " has already in own_stocks, there is something wrong in strategy.")
+                else:
+                    cost -= real_price
+                    own_stocks[stock_id] = stock
+                    log.d("買入 : " + stock_id + ", 數量 : " + '{:.3f}'.format(stock.amount) 
+                    + ", 股價 : " + str(s[stock_id].iloc[0]) + ", 買入日期 : " + s.index[0].strftime("%Y-%m-%d"))
+        for stock_id in own_stocks.keys():
+            all_stocks_price += int(price[stock_id].loc[sdate] * own_stocks[stock_id].amount * 1000 * (1 - 0.001425 * discount - 0.003)) 
+        log.d("目前手上持股價值 : " + str(all_stocks_price))
+        log.d("餘額 : " + str(cost) + ", 損益 : " + str(earn_money))
+        log.d("持股 : " + str(own_stocks.keys()))
+        all_stocks_price = 0
+
+        sdate = edate
+        edate = trading_day(sdate + datetime.timedelta(hold_days)) 
+
+    log.d("最後剩多少錢:" + str(cost))
+    all_stocks_price = 0
+    for stock_id in own_stocks.keys():
+        all_stocks_price += int(price[stock_id].loc[sdate] * own_stocks[stock_id].amount * 1000 * (1 - 0.001425 * discount - 0.003)) 
+    log.d("手上持股價值 : " + str(all_stocks_price))
+    return 
+
 # 這個是在算資金要怎麼分給這些股票
-def portfolio(stock_list, money, data, lowest_fee=20, discount=0.6, add_cost=10):
+def portfolio(stock_list, money, data, lowest_fee=20, discount=0.6, odd_lot=True):
+    if len(stock_list) == 0:
+        return {}
+
+    # list to series 
+    stock_list = pd.Index(stock_list)
     price = data.get('收盤價', 1)
     stock_list = price.iloc[-1][stock_list].transpose()
-    print('estimate price according to', price.index[-1])
+    log.d('portfolio : estimate price according to ' +  str(price.index[-1]))
 
-    print('initial number of stock', len(stock_list))
-    while (money / len(stock_list)) < (lowest_fee - add_cost) * 1000 / 1.425 / discount:
+    log.d('portfolio : initial number of stock ' +  str(len(stock_list)))
+    # 假如平均成本導致手續費不到20要付20元划不來，就把最貴的一支股票刪掉
+    while ((money / len(stock_list)) * (0.1425/100 * discount)) < lowest_fee:
         stock_list = stock_list[stock_list != stock_list.max()]
-    print('after considering fee', len(stock_list))
-        
-    while True:
-        invest_amount = (money / len(stock_list))
-        ret = np.floor(invest_amount / stock_list / 1000)
-        
-        if (ret == 0).any():
-            stock_list = stock_list[stock_list != stock_list.max()]
+        if len(stock_list.index) == 0:
+            log.d('portfolio : after considering fee, list is empty.')
+            return {}
+    log.d('portfolio : after considering fee ' + str(len(stock_list)))
+
+    if not odd_lot:
+        while True:
+            invest_amount = (money / len(stock_list))
+            ret = np.floor(invest_amount / stock_list / 1000)
+            if (ret == 0).any():
+                stock_list = stock_list[stock_list != stock_list.max()]
+                if len(stock_list.index) == 0:
+                    log.d('portfolio : after considering odd_lot, list is empty.')
+                    return {}
+            else:
+                break
+        log.d('portfolio : after considering odd_lot ' + str(len(stock_list)))
+    # 因為零股要另外下一張單，要另外花手續費，所以買不到一張的我就直接買零股，買一張以上的就以一張一張買不要零股了
+    cost = round(money / len(stock_list) - 0.5)
+    result = {}
+    for stock_id in stock_list.index:
+        # 買一張的價錢
+        stock_price = stock_list.loc[stock_id] * 1000
+        if stock_price > cost:
+            amount = round(cost / stock_price * 1000 - 0.5) / 1000
+            result[stock_id] = amount
         else:
-            break
-    
-    print('after considering 1000 share', len(stock_list))
+            amount = round(cost / stock_price - 0.5)
+            result[stock_id] = amount
         
-    return ret, (ret * stock_list * 1000).sum()
+    return result
+
+if __name__ == '__main__':
+    import data
+    from strategy import StrategyTest
+
+    
+    d = data.Data()
+    s = StrategyTest()
+    backtest(datetime.date(2023, 1, 5), datetime.date(2023, 2, 10), 1, s, data=d, cost=1000000)
+
