@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 import logging
 import time
+import os
 
 # Avoid generating same logger
 count = 0
@@ -16,7 +17,7 @@ class Logger:
 
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s\t : %(message)s'))
-        file_handler = logging.FileHandler(filename="invest-stock-log.log", encoding='utf-8')
+        file_handler = logging.FileHandler(filename=os.path.abspath('.') + "/logs/invest-stock-log.log", encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s\t : %(message)s'))
 
         self.logger.addHandler(stream_handler)

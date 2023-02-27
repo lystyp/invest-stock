@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import datetime
-import db_util
+from . import db_util
 import sqlalchemy
 
 class Data():

@@ -1,10 +1,11 @@
 import sqlalchemy
 import json
+import os
 
 def get_db_connection():
     # 資料庫設定
     db_settings = {}
-    with open('../authentication/db_login_information.json', 'r') as file:
+    with open(os.path.abspath('.') + '/authentication/db_login_information.json', 'r') as file:
         db_settings = json.load(file)
 
     engine = sqlalchemy.create_engine('mysql+pymysql://{user}:{password}@{host}:{port}/{db}'.format(

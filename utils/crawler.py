@@ -4,7 +4,7 @@ from io import StringIO
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from financial_statement import html2db
+from .financial_statement import html2db
 from requests.exceptions import ConnectionError
 from requests.exceptions import ReadTimeout
 import warnings

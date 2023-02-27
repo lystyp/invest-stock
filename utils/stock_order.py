@@ -2,11 +2,11 @@ import shioaji as sj
 import pandas as pd
 import time
 import json
-import logging_util
-import crawler
+from . import logging_util
+from . import crawler
 import sqlalchemy
 from talib import abstract
-from db_util import get_db_connection
+from .db_util import get_db_connection
 import matplotlib.pyplot as plt
 
 log = logging_util.Logger("stock order")
@@ -27,20 +27,6 @@ class Stock:
         self.amount = amount
 
 if __name__ == '__main__':
-    # login_info = {}
-    # with open('../authentication/shioaji_login_information.json', 'r') as file:
-    #     login_info = json.load(file)
-
-    # api = sj.Shioaji(simulation=False) 
-    # accounts =  api.login(login_info["api_key"], login_info["secret_key"])
-    # api.activate_ca(
-    #     ca_path="../authentication/Sinopac.pfx",
-    #     ca_passwd=login_info["ca_passwd"],
-    #     person_id=login_info["person_id"],
-    # )
-
-    # save = api.account_balance()
-
     import data
     import talib
     import matplotlib.pyplot as plt
