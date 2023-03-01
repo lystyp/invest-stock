@@ -20,11 +20,18 @@ def get_daily_order(recommand_order):
     pass
 
 class Stock:
-    def __init__(self, stock_id, bought_time, cost, amount) -> None:
+    def __init__(self, stock_id, bought_time, price, total_cost, amount) -> None:
         self.stock_id = stock_id
         self.bought_time = bought_time
-        self.cost = cost
+        self.price = price
+        self.total_cost = total_cost
         self.amount = amount
+
+    def add(self, stock):
+        self.bought_time = stock.bought_time
+        self.price = (self.price + stock.price) / 2
+        self.total_cost += stock.total_cost
+        self.amount += stock.amount
 
 if __name__ == '__main__':
     import data

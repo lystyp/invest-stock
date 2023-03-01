@@ -60,7 +60,7 @@ class StrategyTest(Strategy):
                 break
 
             id = transacted_volume.index[i]
-            # 頭尾資料都會拿
+            # 用:拿資料頭尾資料都會拿
             high = self.high[id].loc[first_date:last_date].ffill()
             low = self.low[id].loc[first_date:last_date].ffill()
             close = self.close[id].loc[first_date:last_date].ffill()
@@ -86,8 +86,8 @@ class StrategyTest(Strategy):
                 log.e("不明原因，股票 : " + stock_id + " 收盤價為空")
             else:
                 stock : Stock = stocks[stock_id]
-                profit = (close[stock_id] - stock.cost) / stock.cost
-                if profit > 0.03 or profit < -0.01 or (date - stock.bought_time).days > 14:
+                profit = (close[stock_id] - stock.price) / stock.price
+                if profit > 0.02 or profit < -0.02 or (date - stock.bought_time).days > 15:
                     sell_list.append(stock_id)
         return sell_list
     
