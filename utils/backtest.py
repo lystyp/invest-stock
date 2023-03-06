@@ -193,6 +193,8 @@ def backtest2(start_date, end_date, hold_days, strategy, data, cost, discount=1)
                 return date
         sdate = trading_day(start_date)
         edate = trading_day(sdate + datetime.timedelta(hold_days))
+        if edate > end_date:
+            edate = end_date
 
         while sdate < end_date:
             log.d("==================================================")
@@ -239,7 +241,7 @@ def backtest2(start_date, end_date, hold_days, strategy, data, cost, discount=1)
                         else:
                             lose_count += 1
                 # 再買 
-                buy_dict = portfolio(buy_list, money=cost, prices=price.loc[sdate].dropna())
+                buy_dict = portfolio(buy_list, money=cost, prices=price.ffill().loc[sdate])
                 log.d("買入 : " + str(buy_dict.keys()))
                 for stock_id in buy_dict.keys():
                     if math.isnan(s[stock_id].iloc[0]):

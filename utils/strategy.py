@@ -3,7 +3,7 @@ import talib
 import pandas as pd
 from . import logging_util
 from . import data
-from datetime import datetime, timedelta
+import datetime
 from .stock_order import Stock
 import math
 
@@ -12,7 +12,7 @@ log = logging_util.Logger("Strategy")
 class Strategy(ABC):
     
     def __init__(self):
-        super().__init__()
+        pass
         
     @abstractmethod
     def buy_list(self, date):
@@ -26,12 +26,11 @@ class Strategy(ABC):
     def update_data(self, start_date, end_date):
         pass
 
-
 class StrategyTest(Strategy):
     def __init__(self):
-        super().__init__()
         # set data in update function
         self.data = data.Data()
+
         self.close = None
         self.high = None
         self.low = None
@@ -40,7 +39,7 @@ class StrategyTest(Strategy):
         self.kd_range = 35
 
     def buy_list(self, date):
-        first_date = date - timedelta(days=self.kd_range)
+        first_date = date - datetime.timedelta(days=self.kd_range)
         last_date = date
         # 假如我要分析的日期比data的date新，那應該是
         if self.data.date < date:
@@ -107,6 +106,141 @@ class StrategyTest(Strategy):
         self.low = self.data.get('最低價', n)
         self.transacted_volume = self.data.get('成交金額', n)
 
+class StrategyTest2(Strategy):
+    def __init__(self):
+        # set data in update function
+        self.data = data.Data()
+
+        self.price = None
+        self.pbr = None
+        self.monthly_revenue = None
+
+    def update_data(self, first_date, last_date):
+        self.data.date = last_date
+        n = (last_date - first_date).days + 1
+        # 財報一季出一次，三個月大概六七十個營業日吧我猜，財報跟月營收除數都抓小一點避免除不夠，多拿一點也沒差
+        share_capital = self.data.get('普通股股本', int(n/60) + 2)
+        property = self.data.get('歸屬於母公司業主之權益合計', int(n/60) + 2) 
+        self.monthly_revenue = self.data.get('當月營收', int(n/28) + 14)
+        self.price = self.data.get('收盤價', n)
+        self.pbr = self.price.reindex(share_capital.index, method='ffill') / (property / (share_capital / 10))
+
+    def sell_list(self, date, stocks):
+        return []
+    
+    def buy_list(self, date):
+        # 第一個條件：股價淨值比最近一天（iloc[-1]）小於 0.5
+        # 先找最近一次的pbr，再篩選出小於0.5的部分
+        print(self.pbr.index)
+        print(self.pbr.index <= pd.to_datetime(date))
+        pbr = self.pbr[self.pbr.index <= pd.to_datetime(date)].iloc[-1]
+        condition1 = pbr.index[pbr < 0.5]
+        
+        # 第二個條件：近三個月平均月營收 > 近一年月營收
+        monthly_revenue = self.monthly_revenue[self.monthly_revenue.index <= pd.to_datetime(date)]
+        condition2 = monthly_revenue.columns[monthly_revenue.iloc[-3:].mean() > monthly_revenue.iloc[-12:].mean()]
+        
+        l = condition1 & condition2
+        return list(l[l].index)
+      
+class StrategyTest3(Strategy):
+    def __init__(self):
+        # set data in update function
+        self.data = data.Data()
+
+        self.share_capital = None
+        self.price = None
+        self.roc = None
+        self.operating_margin = None
+        self.monthly_revenue = None
+
+    def update_data(self, first_date, last_date):
+        self.data.date = last_date
+        n = (last_date - first_date).days + 1
+
+        self.share_capital = self.data.get('股本合計', int(n/60) + 2)
+        # 要拿到財報當天的收盤價，最多就是剛好明天是新一季財報，間隔最常會是11-14 ~ 3/31大概有四個半月大概九十幾個交易日
+        self.price = self.data.get('收盤價', (n + 120))
+        
+        self.free_cash_flow = \
+            self.to_seasonal(self.data.get('投資活動之淨現金流入（流出）', int(n/60) + 5)) \
+            + self.to_seasonal(self.data.get('營業活動之淨現金流入（流出）', int(n/60) + 5))
+        self.roe = self.data.get('本期淨利（淨損）', int(n/60) + 2) / self.data.get('權益總計', int(n/60) + 2). \
+            fillna(self.data.get('權益總額', int(n/60) + 2))
+        self.operating_margin = self.data.get('營業利益（損失）', int(n/60) + 6)
+        self.monthly_revenue = self.data.get('當月營收', int(n/30) + 5)
+
+    def sell_list(self, date, stocks):
+        return []
+    
+    def buy_list(self, date):
+        if self.data.date < date:
+            self.update_data(first_date=date, last_date=date)
+
+        # condition 1 : 求市值
+        # 股本單位是千
+        share_capital = self.share_capital.loc[:date]
+        market_cap = share_capital.iloc[-1] * 1000 / 10 * self.price.reindex(share_capital.index, method='ffill').iloc[-1]  # 避免當天收盤價是空的
+
+        # condition 2 : 近四季自由現金流
+        free_cash_flow = self.free_cash_flow.loc[:date].iloc[-4:].bfill().dropna(axis=1).sum()
+
+        # condition 3 : 股東權益報酬率
+        roe = self.roe.loc[:date].iloc[-1]
+
+        # condition 4 : 與去年同季相比的營業利益成長率
+        operating_margin = self.operating_margin.loc[:date]
+        operating_margin_inc = (operating_margin.iloc[-1] / operating_margin.iloc[-5] - 1) * 100
+
+        # condition 5 : 市值營收比(課程裡面是用市價 / 季營收)
+        # 有些公司已經破產，導致只有舊的財報有資料，新的財報是空的，會導致在算psr的時候會除 Nan導致有無限大的值出現，需要dropna
+        # 月營收單位是1000，抓最近四個月, 丟掉已經破產導致沒有月報的公司, 假設某公司某月剛好沒有月報就用最新的補
+        monthly_revenue = (self.monthly_revenue.loc[:date] * 1000).iloc[-4:].bfill().dropna(axis=1) 
+        season_revenue = monthly_revenue.sum()
+        psr = market_cap / season_revenue
+
+        condition1 = (market_cap < 10000000000)
+        log.d("condition1 : " + str(list(condition1[condition1].index)))
+        condition2 = free_cash_flow > 0
+        log.d("condition2 : " + str(list(condition2[condition2].index)))
+        condition3 = roe > 0
+        log.d("condition3 : " + str(list(condition3[condition3].index)))
+        condition4 = operating_margin_inc > 0
+        log.d("condition4 : " + str(list(condition4[condition4].index)))
+        condition5 = psr < 5
+        log.d("condition5 : " + str(list(condition5[condition5].index)))
+        # 將條件做交集（&）
+        select_stock = condition1 & condition2 & condition3 & condition4 & condition5 
+
+        return list(select_stock[select_stock].index)
+
+    # 將每季累計的財務數據，轉換成單季，因為現金流是累加的，算個別一季的要分開算
+    # 第一季財報五月出，是1~3月累加
+    # 第二季財報八月出，是1~6月累加
+    # 第三季財報十一月出，是1~9月累加
+    # 第四季財報隔年三月出，是1~12月累加
+    def to_seasonal(self, df):
+        season4 = df[df.index.month == 3]
+        season1 = df[df.index.month == 5]
+        season2 = df[df.index.month == 8]
+        season3 = df[df.index.month == 11]
+
+        season1.index = season1.index.year
+        season2.index = season2.index.year
+        season3.index = season3.index.year
+        season4.index = season4.index.year - 1
+
+        newseason1 = season1
+        newseason2 = season2 - season1.reindex_like(season2)
+        newseason3 = season3 - season2.reindex_like(season3)
+        newseason4 = season4 - season3.reindex_like(season4)
+
+        newseason1.index = pd.to_datetime(newseason1.index.astype(str) + '-05-15')
+        newseason2.index = pd.to_datetime(newseason2.index.astype(str) + '-08-14')
+        newseason3.index = pd.to_datetime(newseason3.index.astype(str) + '-11-14')
+        newseason4.index = pd.to_datetime((newseason4.index + 1).astype(str) + '-03-31')
+
+        return newseason1.append(newseason2).append(newseason3).append(newseason4).sort_index()
 if __name__ == '__main__':
     
     t_start = datetime.now()
