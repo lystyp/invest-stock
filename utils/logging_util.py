@@ -26,20 +26,32 @@ class Logger:
     def set_tag(self, tag):
         self.tag = tag
    
-    def d(self, message = None):
-        s = str(message) if self.tag is None else self.tag + " - " + str(message)
+    def d(self, *args):
+        s = ""
+        for arg in args:
+            s = s + str(arg)
+        s = s if self.tag is None else self.tag + " - " + s
         self.logger.debug(s)
 
-    def i(self, message = None):
-        s = str(message) if self.tag is None else self.tag + " - " + str(message)
+    def i(self, *args):
+        s = ""
+        for arg in args:
+            s = s + str(arg)
+        s = s if self.tag is None else self.tag + " - " + s
         self.logger.info(s)
 
-    def w(self, message = None):
-        s = str(message) if self.tag is None else self.tag + " - " + str(message)
+    def w(self, *args):
+        s = ""
+        for arg in args:
+            s = s + str(arg)
+        s = s if self.tag is None else self.tag + " - " + s
         self.logger.warn(s)
 
-    def e(self, message = None):
-        s = str(message) if self.tag is None else self.tag + " - " + str(message)
+    def e(self, *args):
+        s = ""
+        for arg in args:
+            s = s + str(arg)
+        s = s if self.tag is None else self.tag + " - " + s
         self.logger.error(s)
 
 

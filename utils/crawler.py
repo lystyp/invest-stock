@@ -11,9 +11,13 @@ import warnings
 import json
 import sqlalchemy
 
-
 import random
 import copy
+import traceback
+from .logging_util import Logger 
+
+log = Logger("crawler.py")
+
 def generate_random_header():
     random_user_agents = {'chrome': ['Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36',
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36',
@@ -288,21 +292,21 @@ def find_best_session():
 
     for i in range(10):
         try:
-            print('獲取新的Session 第', i, '回合')
+            log.d('獲取新的Session 第', i, '回合')
             headers = generate_random_header()
             ses = requests.Session()
             ses.get('https://www.twse.com.tw/zh/', headers=headers, timeout=10)
             ses.headers.update(headers)
-            print('獲取Session成功！')
+            log.d('獲取Session成功！')
             return ses
         except (ConnectionError, ReadTimeout) as error:
-            print(error)
-            print('失敗，10秒後重試')
+            log.e(error)
+            log.e('失敗，10秒後重試')
             time.sleep(10)
 
-    print('您的網頁IP已經被證交所封鎖，請更新IP來獲取解鎖')
-    print("　手機：開啟飛航模式，再關閉，即可獲得新的IP")
-    print("數據機：關閉然後重新打開數據機的電源")
+    log.e('您的網頁IP已經被證交所封鎖，請更新IP來獲取解鎖')
+    log.e("　手機：開啟飛航模式，再關閉，即可獲得新的IP")
+    log.e("數據機：關閉然後重新打開數據機的電源")
 
 ses = None
 def requests_get(*args1, **args2):
@@ -318,8 +322,8 @@ def requests_get(*args1, **args2):
         try:
             return ses.get(*args1, timeout=10, **args2)
         except (ConnectionError, ReadTimeout) as error:
-            print(error)
-            print('retry one more time after 15s', i, 'times left')
+            log.e(error)
+            log.e('retry one more time after 15s', i, 'times left')
             time.sleep(15)
             ses = find_best_session()
 
@@ -341,8 +345,8 @@ def requests_post(*args1, **args2):
         try:
             return ses.post(*args1, timeout=10, **args2)
         except (ConnectionError, ReadTimeout) as error:
-            print(error)
-            print('retry one more time after 60s', i, 'times left')
+            log.e(error)
+            log.e('retry one more time after 60s', i, 'times left')
             time.sleep(60)
             ses = find_best_session()
 
@@ -357,8 +361,8 @@ def crawl_price(date):
     try:
         r = requests_post('https://www.twse.com.tw/exchangeReport/MI_INDEX?response=csv&date=' + datestr + '&type=ALLBUT0999')
     except Exception as e:
-        print('**WARRN: cannot get stock price at', datestr)
-        print(e)
+        log.e('**WARRN: cannot get stock price at', datestr)
+        log.e(e)
         return None
 
     content = r.text.replace('=', '')
@@ -387,7 +391,7 @@ def crawl_price(date):
 def crawl_monthly_report(date):
 
     url = 'https://mops.twse.com.tw/nas/t21/sii/t21sc03_'+str(date.year - 1911)+'_'+str(date.month)+'.html'
-    print(url)
+    log.d(url)
 
     # 偽瀏覽器
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
@@ -398,7 +402,7 @@ def crawl_monthly_report(date):
         r.encoding = 'big5'
 
     except Exception as ex:
-        print('**WARRN: requests cannot get html in crawl_monthly_report : ' + str(ex))
+        log.e('**WARRN: requests cannot get html in crawl_monthly_report : ' + str(ex))
         return None
 
     import lxml
@@ -406,7 +410,7 @@ def crawl_monthly_report(date):
     try:
         html_df = pd.read_html(StringIO(r.text))
     except Exception as ex:
-        print('**WARRN: Pandas cannot find any table in the HTML file : ' + str(ex))
+        log.e('**WARRN: Pandas cannot find any table in the HTML file : ' + str(ex))
         return None
 
     # 處理一下資料
@@ -461,13 +465,13 @@ def crawl_finance_statement2019(year, season):
     def ifrs_url(year, season):
         url = "https://mops.twse.com.tw/server-java/FileDownLoad?step=9&fileName=tifrs-"+str(year)+"Q"+str(season)\
                 +".zip&filePath=/home/html/nas/ifrs/"+str(year)+"/"
-        print(url)
+        log.d(url)
         return url
 
 
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
 
-    print('start download')
+    log.d('start download')
 
     class DownloadProgressBar(tqdm):
         def update_to(self, b=1, bsize=1, tsize=None):
@@ -481,28 +485,31 @@ def crawl_finance_statement2019(year, season):
                                  miniters=1, desc=url.split('/')[-1]) as t:
             urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
 
+    # 國際財務報導準則（英語：International Financial Reporting Standards，縮寫：IFRS），
+    # 又稱國際財務報導準則、國際會計準則，是指國際會計準則理事會（International Accounting Standards Board，縮寫：IASB）
+    # 編寫發布的一套致力於使世界各國公司能夠相互理解和比較財務資訊的財務會計準則和解釋公告。
     def ifrs_url(year, season):
         url = "https://mops.twse.com.tw/server-java/FileDownLoad?step=9&fileName=tifrs-"+str(year)+"Q"+str(season)\
                 +".zip&filePath=/home/html/nas/ifrs/"+str(year)+"/"
-        print(url)
+        log.d(url)
         return url
 
     url = ifrs_url(year,season)
     download_url(url, 'temp.zip')
 
-    print('finish download')
-
+    log.d('finish download')
+    
     path = os.path.join('data', 'financial_statement', str(year) + str(season))
 
     if os.path.isdir(path):
         shutil.rmtree(path)
 
-    print('create new dir')
+    log.d('create new dir')
 
     zipfiles = zipfile.ZipFile(open('temp.zip', 'rb'))
     zipfiles.extractall(path=path)
 
-    print('extract all files')
+    log.d('extract all files')
 
     fnames = [f for f in os.listdir(path) if f[-5:] == '.html']
     fnames = sorted(fnames)
@@ -511,7 +518,7 @@ def crawl_finance_statement2019(year, season):
 
     for fold, fnew in zip(fnames, newfnames):
         if len(fnew) != 9:
-            print('remove strange code id', fnew)
+            log.d('remove strange code id', fnew)
             os.remove(os.path.join(path, fold))
             continue
 
@@ -544,7 +551,7 @@ def crawl_finance_statement(year, season, stock_ids):
         }
         pbar = tqdm(stock_ids)
         for i in stock_ids:
-            print("Handle stock : " + str(i) + ", year : " + str(year) + ", season : " + str(season) + ", type : " + report_type)
+            log.d("Handle stock : " + str(i) + ", year : " + str(year) + ", season : " + str(season) + ", type : " + report_type)
             # check if the html is already parsed
             file = os.path.join(directory, str(i) + '.html')
             if os.path.exists(file) and os.stat(file).st_size > 20000:
@@ -560,11 +567,11 @@ def crawl_finance_statement(year, season, stock_ids):
                 url = ('https://mops.twse.com.tw/server-java/t164sb01?step=1&CO_ID='
                        + i + '&SYEAR=' + str(year) + '&SSEASON='+str(season)+'&REPORT_ID=' + str(report_type))
 
-            print(url)
+            log.d(url)
             try:
                 r = requests_get(url, headers=headers)
             except Exception as ex:
-                print('**WARRN: requests cannot get stock', i, '.html : ' + str(ex))
+                log.e('**WARRN: requests cannot get stock', i, '.html : ' + str(ex))
                 time.sleep(25 + random.uniform(0, 10))
                 continue
 
@@ -578,7 +585,7 @@ def crawl_finance_statement(year, season, stock_ids):
             f.close()
 
             # finish
-            # print(percentage, i, 'end')
+            # log.d(percentage, i, 'end')
 
             # sleep a while
             time.sleep(10)
@@ -642,6 +649,7 @@ def add_to_sql(conn, name, df):
 
     # get the existing dataframe in database
     exist = table_exist(conn, name)
+    log.d("add_to_sql, original table is exist :" + str(exist))
     ret = pd.read_sql(sqlalchemy.text('select * from ' + name), conn, index_col=['stock_id', 'date']) if exist else pd.DataFrame()
 
     # add new df to the dataframe
@@ -652,38 +660,87 @@ def add_to_sql(conn, name, df):
     ret = ret.dropna(subset=['date']).drop_duplicates(['stock_id', 'date'], keep='last')
     ret = ret.sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
     # add the combined table
+    log.d("Save df to backup.csv")
     ret.to_csv('backup.csv')
-    print("Add data to sql.")
+    log.d("Add data to sql.")
     try:
         # 這裡有大bug啦!!! conn參數不是丟connection，是丟engine，否則table會是空的(不知道是不是只有MySQL會這樣)
         # https://stackoverflow.com/questions/48307008/pandas-to-sql-doesnt-insert-any-data-in-my-table
 
         # 要存回MySQL因為string型態不能當index及key，所以要把string改成varchar
         ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
-        print("Insert data to sql success.")
+        log.d("Insert data to sql success.")
     except Exception as ex:
-        print("Insert data to sql error :" + str(ex))
+        log.e("Insert data to sql error :" + str(ex))
         ret = pd.read_csv('backup.csv', parse_dates=['date'], dtype={'stock_id':str})
         ret['stock_id'] = ret['stock_id'].astype(str)
         ret.set_index(['stock_id', 'date'], inplace=True)
-        ret.to_sql(name, conn, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+        ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
 
+def merge_to_sql(conn, name, df):
+
+    # get the existing dataframe in database
+    exist = table_exist(conn, name)
+    log.d("merge_to_sql, original table is exist :" + str(exist))
+    ret = df
+    ret.reset_index(inplace=True)
+    ret['stock_id'] = ret['stock_id'].astype(str)
+    ret['date'] = pd.to_datetime(ret['date'])
+    ret = ret.dropna(subset=['date']).drop_duplicates(['stock_id', 'date'], keep='last')
+    ret = ret.sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
+    log.d(ret.to_string())
+
+    log.d("Merge data to sql.")
+    try:
+        # 這裡有大bug啦!!! conn參數不是丟connection，是丟engine，否則table會是空的(不知道是不是只有MySQL會這樣)
+        # https://stackoverflow.com/questions/48307008/pandas-to-sql-doesnt-insert-any-data-in-my-table
+
+        # 要存回MySQL因為string型態不能當index及key，所以要把string改成varchar
+        if exist:
+            # 要先把要新增的ret存到一個暫存的temp table，接著再透過mySQL指令把temp合併到目標資料夾裡，若資料已存在就update，不存在就insert
+            # 因此我們要先把stock_id跟date合併成一組unique的index，後續的ON DUPLICATE KEY UPDATE 指令才可以根據index判斷有沒有重複
+            # 所以我先檢查我之前有把有把index設成unique過，沒有就設，有就不用再設定一次了
+            is_index_not_unique = pd.read_sql(sqlalchemy.text('SHOW INDEX FROM ' + name + ' where Key_name = \'UQ_stock_id_date\';'), conn).empty
+            if is_index_not_unique:
+                log.d("Table index is not unique, set it to unique.") 
+                cmd = 'ALTER TABLE ' + name + ' ADD CONSTRAINT UQ_stock_id_date UNIQUE (`stock_id`, `date`);'
+                conn.execute(sqlalchemy.text(cmd))
+
+            log.d("Save ret to temp table.") 
+            ret.to_sql("temp", conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+            s1 = '`stock_id`, `date`' # 取得index name
+            s2 = ""
+            for i in range(len(ret.columns)):
+                s1 += ", `" + ret.columns[i] + "`" 
+                s2 += ", `" + ret.columns[i] + "` = VALUES(`" + ret.columns[i] + "`)"
+            s2 = s2[1:] # 去掉第一個逗號
+            cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp` ON DUPLICATE KEY UPDATE ' + s2 + ';'
+            log.d("SQL cmd :" + cmd) 
+            # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
+            conn.execute(sqlalchemy.text(cmd))
+            conn.commit()
+            conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
+        else:
+            ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+        log.d("Insert data to sql success.")
+    except Exception:
+        log.e("Error : " + str(traceback.format_exc()))
 
 def update_price_table(conn, dates):
     crawl_function = crawl_price
     table_name = 'price'
-    print('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
+    log.d('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
 
     df = pd.DataFrame()
     dfs = {}
 
     for d in dates:
 
-        print('crawling', d)
+        log.d('crawling', d)
         data = crawl_function(d)
 
         if data is None:
-            print('fail, check if it is a holiday')
+            log.d('fail, check if it is a holiday')
 
         # update multiple dataframes
         elif isinstance(data, dict):
@@ -696,45 +753,45 @@ def update_price_table(conn, dates):
         # update single dataframe
         else:
             df = df.append(data)
-            print('update data in date : ' + str(d) + ' success')
+            log.d('update data in date : ' + str(d) + ' success')
 
 
         if len(df) > 50000:
-            add_to_sql(conn, table_name, df)
+            merge_to_sql(conn, table_name, df)
             df = pd.DataFrame()
-            print('save', len(df))
+            log.d('save', len(df))
         
-        print('wait 15 secs before next data')
+        log.d('wait 15 secs before next data')
         time.sleep(15)
 
-    print('update data, download all data success.')
+    log.d('update data, download all data success.')
 
 
     if df is not None and len(df) != 0:
-        add_to_sql(conn, table_name, df)
+        merge_to_sql(conn, table_name, df)
 
     if len(dfs) != 0:
         for i, d in dfs.items():
-            print('saveing df', d.head(), len(d))
+            log.d('saveing df', d.head(), len(d))
             if len(d) != 0:
-                print('save df', d.head())
-                add_to_sql(conn, i, d)
+                log.d('save df', d.head())
+                merge_to_sql(conn, i, d)
 
 def update_monthly_revenue_table(conn, dates):
     crawl_function = crawl_monthly_report
     table_name = 'monthly_revenue'
-    print('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
+    log.d('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
 
     df = pd.DataFrame()
     dfs = {}
 
     for d in dates:
 
-        print('crawling', d)
+        log.d('crawling', d)
         data = crawl_function(d)
 
         if data is None:
-            print('fail, check if it is a holiday')
+            log.d('fail, check if it is a holiday')
 
         # update multiple dataframes
         elif isinstance(data, dict):
@@ -747,29 +804,29 @@ def update_monthly_revenue_table(conn, dates):
         # update single dataframe
         else:
             df = df.append(data)
-            print('update data in date : ' + str(d) + ' success')
+            log.d('update data in date : ' + str(d) + ' success')
 
 
         if len(df) > 50000:
-            add_to_sql(conn, table_name, df)
+            merge_to_sql(conn, table_name, df)
             df = pd.DataFrame()
-            print('save', len(df))
+            log.d('save', len(df))
         
-        print('wait 15 secs before next data')
+        log.d('wait 15 secs before next data')
         time.sleep(15)
 
-    print('update data, download all data success.')
+    log.d('update data, download all data success.')
 
 
     if df is not None and len(df) != 0:
-        add_to_sql(conn, table_name, df)
+        merge_to_sql(conn, table_name, df)
 
     if len(dfs) != 0:
         for i, d in dfs.items():
-            print('saveing df', d.head(), len(d))
+            log.d('saveing df', d.head(), len(d))
             if len(d) != 0:
-                print('save df', d.head())
-                add_to_sql(conn, i, d)
+                log.d('save df', d.head())
+                merge_to_sql(conn, i, d)
 
 # 每年的 3/31, 5/15, 8/14, 11/14 當作撈四季財報的日期
 # 由於撈財報存成table的作法是先把時間內的html撈下來，然後再讀到df裡面，最後存到db蓋掉原本的表格，
@@ -778,14 +835,14 @@ def update_monthly_revenue_table(conn, dates):
 # 還沒改之前先不要亂用這個好了
 def update_finance_statement_table(conn, dates):
     if len(dates) == 0:
-        print("There is no data between dates.")
+        log.d("There is no data between dates.")
         return
 
-    print('start craw lfinance_statement from ', dates[0] , 'to', dates[-1])
+    log.d('start craw lfinance_statement from ', dates[0] , 'to', dates[-1])
 
     for d in dates:
 
-        print('crawling', d)
+        log.d('crawling', d)
         year = d.year
         if d.month == 3:
             season = 4
@@ -804,6 +861,7 @@ def update_finance_statement_table(conn, dates):
             return None
         
         # 2019年以前需要一個公司一個公司的財報分開下載，2019年之後可以全部公司的財報一次下載下來
+        log.d("update_finance_statement_table,year = " + str(year) + "season = " + str(season))
         if year >= 2019:
             crawl_finance_statement2019(year, season)
         else:
