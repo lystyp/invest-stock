@@ -4,7 +4,7 @@ from io import StringIO
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from .financial_statement import html2db
+from .financial_statement import html2db, html2db_single_season
 from requests.exceptions import ConnectionError
 from requests.exceptions import ReadTimeout
 import warnings
@@ -590,6 +590,7 @@ def crawl_finance_statement(year, season, stock_ids):
             # sleep a while
             time.sleep(10)
     if year < 2019:
+        # 不知道為什麼要下載這麼多次
         download_html(year, season, stock_ids, 'C')
         download_html(year, season, stock_ids, 'A')
         download_html(year, season, stock_ids, 'B')
@@ -681,16 +682,16 @@ def merge_to_sql(conn, name, df):
 
     # get the existing dataframe in database
     exist = table_exist(conn, name)
-    log.d("merge_to_sql, original table is exist :" + str(exist))
-    ret = df
+    log.d(name, " merge_to_sql, original table is exist :" + str(exist))
+    ret = df.copy()
     ret.reset_index(inplace=True)
     ret['stock_id'] = ret['stock_id'].astype(str)
     ret['date'] = pd.to_datetime(ret['date'])
     ret = ret.dropna(subset=['date']).drop_duplicates(['stock_id', 'date'], keep='last')
     ret = ret.sort_values(['stock_id', 'date']).set_index(['stock_id', 'date'])
-    log.d(ret.to_string())
 
     log.d("Merge data to sql.")
+    log.d('save table ', name, " , size = ", ret.shape)
     try:
         # 這裡有大bug啦!!! conn參數不是丟connection，是丟engine，否則table會是空的(不知道是不是只有MySQL會這樣)
         # https://stackoverflow.com/questions/48307008/pandas-to-sql-doesnt-insert-any-data-in-my-table
@@ -706,8 +707,11 @@ def merge_to_sql(conn, name, df):
                 cmd = 'ALTER TABLE ' + name + ' ADD CONSTRAINT UQ_stock_id_date UNIQUE (`stock_id`, `date`);'
                 conn.execute(sqlalchemy.text(cmd))
 
+            # 存一個暫用的temp table等等合併要用
             log.d("Save ret to temp table.") 
             ret.to_sql("temp", conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+     
+            # 把temp表格merge回原本的表格後再砍掉temp
             s1 = '`stock_id`, `date`' # 取得index name
             s2 = ""
             for i in range(len(ret.columns)):
@@ -715,7 +719,7 @@ def merge_to_sql(conn, name, df):
                 s2 += ", `" + ret.columns[i] + "` = VALUES(`" + ret.columns[i] + "`)"
             s2 = s2[1:] # 去掉第一個逗號
             cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp` ON DUPLICATE KEY UPDATE ' + s2 + ';'
-            log.d("SQL cmd :" + cmd) 
+            log.d("Insert table ", name, "with ON DUPLICATE KEY UPDATE.") 
             # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
             conn.execute(sqlalchemy.text(cmd))
             conn.commit()
@@ -736,7 +740,7 @@ def update_price_table(conn, dates):
 
     for d in dates:
 
-        log.d('crawling', d)
+        log.d('crawling ', d)
         data = crawl_function(d)
 
         if data is None:
@@ -842,30 +846,33 @@ def update_finance_statement_table(conn, dates):
 
     for d in dates:
 
-        log.d('crawling', d)
+        log.d('crawling ', d)
         year = d.year
-        if d.month == 3:
+        if date.month == 3:
             season = 4
             year = year - 1
             month = 11
-        elif d.month == 5:
+        elif date.month == 5:
             season = 1
             month = 2
-        elif d.month == 8:
+        elif date.month == 8:
             season = 2
             month = 5
-        elif d.month == 11:
+        elif date.month == 11:
             season = 3
             month = 8
         else:
-            return None
+            log.d("Month ", d.month, " does not release financial report.")
+            continue
         
-        # 2019年以前需要一個公司一個公司的財報分開下載，2019年之後可以全部公司的財報一次下載下來
-        log.d("update_finance_statement_table,year = " + str(year) + "season = " + str(season))
+        # 2019年以前需要一個公司一個公司的財報分開下載，2019年之後可以全部公司的財報一次下載一個zip下來
+        log.d("update_finance_statement_table,year = " + str(year) + ", season = " + str(season))
+        # 下載財報html
         if year >= 2019:
             crawl_finance_statement2019(year, season)
         else:
             df = crawl_monthly_report(datetime.datetime(year, month, 1))
             crawl_finance_statement(year, season, df.index.levels[0])
-        html2db(conn, d)
+        # 把html轉dataframe存db
+        html2db_single_season(conn, d)
 
