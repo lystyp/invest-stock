@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 
 import utils.crawler as cl
 import datetime

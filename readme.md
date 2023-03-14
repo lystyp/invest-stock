@@ -12,3 +12,5 @@ Q4的income_sheet是從Q4-Q3的累積income_sheeet來的，如果沒有Q3累積�
 在存財報進db的時候，他只取最多資料的錢900 columns，
 df[df.count().nlargest(900).index] 是因為如果column太多，pandas在轉sql指令的時候就會因為指令太長exception了，
 如果我to_sql的方法用 method='multi'，一樣也會跳出exception，有夠麻煩，可以考慮存csv，快很多，再用sql指令去load csv檔案也可以
+
+Windows系統不支援log file切換，所以log會無限制增長下去

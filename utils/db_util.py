@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import sqlalchemy
 import json
 import os

@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 command = {
   "balance_sheet" : [
     '''

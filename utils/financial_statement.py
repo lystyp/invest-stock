@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import requests
 from io import StringIO
 import pandas as pd
