@@ -22,6 +22,7 @@ def update_daily_data(updated_cb, date):
      # 收盤價
     if daily_price_thread is None or not daily_price_thread.is_alive():
         daily_price_thread = threading.Thread(cl.update_price_table(db_util.get_db_connection(), [date]))
+        daily_price_thread.setDaemon(True)
     else:
         log.e("daily_price_thread is still alive ! There must be something wrong.")
 
@@ -30,6 +31,7 @@ def update_daily_data(updated_cb, date):
     if date.day == 15:
         if monthly_price_thread is None or not monthly_price_thread.is_alive():
             monthly_price_thread = threading.Thread(cl.update_monthly_revenue_table(db_util.get_db_connection(), [date]))
+            monthly_price_thread.setDaemon(True)
         else:
             log.e("monthly_price_thread is still alive ! There must be something wrong.")
 
@@ -40,6 +42,7 @@ def update_daily_data(updated_cb, date):
         (date.month == 11 and date.day == 14):
         if financial_statement_thread is None or not financial_statement_thread.is_alive():
             financial_statement_thread = threading.Thread(cl.update_finance_statement_table(db_util.get_db_connection(), [date]))
+            financial_statement_thread.setDaemon(True)
         else:
             log.e("financial_statement_thread is still alive ! There must be something wrong.")
 
@@ -76,6 +79,9 @@ def update_newest_data():
     price_thread = threading.Thread(target=price)
     monthly_revenue_thread = threading.Thread(target=monthly_revenue)
     financial_statement_thread = threading.Thread(target=financial_statement)
+    price_thread.setDaemon(True)
+    monthly_revenue_thread.setDaemon(True)
+    financial_statement_thread.setDaemon(True)
     price_thread.start()
     monthly_revenue_thread.start()
     financial_statement_thread.start()
