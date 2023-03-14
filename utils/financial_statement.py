@@ -385,7 +385,7 @@ def merge_to_sql(conn, name, df):
             # 'Table definition has changed, please retry transaction'，不知為何
             conn.commit()
             conn.execute(sqlalchemy.text(cmd))
-            
+            conn.commit()
             conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
         else:
             df.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})

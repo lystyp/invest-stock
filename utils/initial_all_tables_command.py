@@ -925,8 +925,8 @@ command = {
   ''',
   "CREATE UNIQUE INDEX `UQ_stock_id_date` ON `income_sheet_cumulate` (`stock_id`,`date`);"],
 "monthly_revenue": [
-  "CREATE TABLE `monthly_revenue` ( `stock_id` VARCHAR(30), `date` TIMESTAMP, `上月比較增減(%)` REAL, `上月營收` REAL, `前期比較增減(%)` REAL, `去年同月增減(%)` REAL, `去年當月營收` INTEGER, `去年累計營收` INTEGER, `當月營收` REAL, `當月累計營收` INTEGER, `備註` REAL );",
+  "CREATE TABLE `monthly_revenue` ( `stock_id` VARCHAR(30), `date` TIMESTAMP, `上月比較增減(%)` REAL, `上月營收` REAL, `前期比較增減(%)` REAL, `去年同月增減(%)` REAL, `去年當月營收` REAL, `去年累計營收` REAL, `當月營收` REAL, `當月累計營收` REAL, `備註` REAL );",
   "CREATE UNIQUE INDEX `UQ_stock_id_date` ON `monthly_revenue` (`stock_id`,`date`);"],
 "price":[
-  "CREATE TABLE `price` ( `stock_id` VARCHAR(30), `date` TIMESTAMP, `成交股數` INTEGER, `成交筆數` INTEGER, `成交金額` INTEGER, `開盤價` REAL, `最高價` REAL, `最低價` REAL, `收盤價` REAL, `漲跌價差` REAL, `最後揭示買價` REAL, `最後揭示買量` REAL, `最後揭示賣價` REAL, `最後揭示賣量` REAL, `本益比` REAL );","CREATE UNIQUE INDEX `UQ_stock_id_date` ON `price` (`stock_id`,`date`);"]
+  "CREATE TABLE `price` ( `stock_id` VARCHAR(30), `date` TIMESTAMP, `成交股數` REAL, `成交筆數` REAL, `成交金額` REAL, `開盤價` REAL, `最高價` REAL, `最低價` REAL, `收盤價` REAL, `漲跌價差` REAL, `最後揭示買價` REAL, `最後揭示買量` REAL, `最後揭示賣價` REAL, `最後揭示賣量` REAL, `本益比` REAL );","CREATE UNIQUE INDEX `UQ_stock_id_date` ON `price` (`stock_id`,`date`);"]
 }

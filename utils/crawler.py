@@ -410,7 +410,7 @@ def crawl_monthly_report(date):
     try:
         html_df = pd.read_html(StringIO(r.text))
     except Exception as ex:
-        log.e('**WARRN: Pandas cannot find any table in the HTML file : ' + str(ex))
+        log.w('**WARRN: Pandas cannot find any table in the HTML file : ' + str(ex))
         return None
 
     # 處理一下資料
@@ -444,7 +444,6 @@ def crawl_monthly_report(date):
 
     return df
 
-
 import requests
 import os
 import time
@@ -458,7 +457,6 @@ import zipfile
 import sys
 import urllib.request
 from tqdm import tqdm
-
 
 def crawl_finance_statement2019(year, season):
 
@@ -526,10 +524,6 @@ def crawl_finance_statement2019(year, season):
             os.rename(os.path.join(path, fold), os.path.join(path, fnew))
         else:
             os.remove(os.path.join(path, fold))
-
-
-
-
 
 def crawl_finance_statement(year, season, stock_ids):
 
@@ -613,7 +607,16 @@ def date_range(start_date, end_date):
     return [dt.date() for dt in rrule(DAILY, dtstart=start_date, until=end_date)]
 
 def month_range(start_date, end_date):
-    return [dt.date() for dt in rrule(MONTHLY, dtstart=start_date, until=end_date)]
+    begin = None
+    if start_date.day <= 15:
+        begin = date(year=start_date.year, month=start_date.month, day=15)
+    else:
+        if start_date.month != 12:
+            begin = date(year=start_date.year,month=start_date.month + 1, day=15)
+        else:
+            begin = date(year=start_date.year + 1, month=1, day=15)
+
+    return [dt.date() for dt in rrule(MONTHLY, dtstart=begin, until=end_date)]
 
 def season_range(start_date, end_date):
 
@@ -637,7 +640,6 @@ def table_exist(conn, table):
     cursor = conn.execute(sqlalchemy.text("SHOW TABLES LIKE '" + table + "';"))
     return len(cursor.fetchall()) > 0
         
-
 def table_latest_date(conn, table):
     cursor = conn.execute(sqlalchemy.text('SELECT date FROM ' + table + ' ORDER BY date DESC LIMIT 1;'))
     return list(cursor)[0][0]
@@ -679,7 +681,6 @@ def add_to_sql(conn, name, df):
         ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
 
 def merge_to_sql(conn, name, df):
-
     # get the existing dataframe in database
     exist = table_exist(conn, name)
     log.d(name, " merge_to_sql, original table is exist :" + str(exist))
@@ -721,6 +722,9 @@ def merge_to_sql(conn, name, df):
             cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp` ON DUPLICATE KEY UPDATE ' + s2 + ';'
             log.d("Insert table ", name, "with ON DUPLICATE KEY UPDATE.") 
             # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
+            # 如果沒有先call commit會出現error
+            # 'Table definition has changed, please retry transaction'，不知為何
+            conn.commit()
             conn.execute(sqlalchemy.text(cmd))
             conn.commit()
             conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
@@ -733,14 +737,14 @@ def merge_to_sql(conn, name, df):
 def update_price_table(conn, dates):
     crawl_function = crawl_price
     table_name = 'price'
-    log.d('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
+    log.d('start crawl ' + table_name + ' from ', dates[0] , ' to ', dates[-1])
 
     df = pd.DataFrame()
     dfs = {}
 
     for d in dates:
 
-        log.d('crawling ', d)
+        log.d('update_price_table, crawling ', d)
         data = crawl_function(d)
 
         if data is None:
@@ -784,16 +788,15 @@ def update_price_table(conn, dates):
 def update_monthly_revenue_table(conn, dates):
     crawl_function = crawl_monthly_report
     table_name = 'monthly_revenue'
-    log.d('start crawl ' + table_name + ' from ', dates[0] , 'to', dates[-1])
+    log.d('start crawl ' + table_name + ' from ', dates[0] , ' to ', dates[-1])
 
     df = pd.DataFrame()
     dfs = {}
 
     for d in dates:
 
-        log.d('crawling', d)
+        log.d('update_monthly_revenue_table, crawling ', d)
         data = crawl_function(d)
-
         if data is None:
             log.d('fail, check if it is a holiday')
 
@@ -842,23 +845,23 @@ def update_finance_statement_table(conn, dates):
         log.d("There is no data between dates.")
         return
 
-    log.d('start craw lfinance_statement from ', dates[0] , 'to', dates[-1])
+    log.d('start crawl finance_statement from ', dates[0] , ' to ', dates[-1])
 
     for d in dates:
 
-        log.d('crawling ', d)
+        log.d('update_finance_statement_table, crawling ', d)
         year = d.year
-        if date.month == 3:
+        if d.month == 3:
             season = 4
             year = year - 1
             month = 11
-        elif date.month == 5:
+        elif d.month == 5:
             season = 1
             month = 2
-        elif date.month == 8:
+        elif d.month == 8:
             season = 2
             month = 5
-        elif date.month == 11:
+        elif d.month == 11:
             season = 3
             month = 8
         else:
@@ -875,4 +878,3 @@ def update_finance_statement_table(conn, dates):
             crawl_finance_statement(year, season, df.index.levels[0])
         # 把html轉dataframe存db
         html2db_single_season(conn, d)
-
