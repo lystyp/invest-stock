@@ -91,8 +91,4 @@ def update_newest_data():
     log.d("Finish~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
 if __name__ == '__main__':
-    conn = db_util.get_db_connection()
-    today = datetime.datetime.now()
-    latest_date_in_table = cl.table_latest_date(conn, TABLE.MONTHLY_REVENUE)
-    date_list = cl.month_range(latest_date_in_table + datetime.timedelta(days=1), today)
-    cl.update_monthly_revenue_table(conn,[datetime.date(2023, 2, 15)])
+    update_newest_data()

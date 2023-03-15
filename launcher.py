@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import update_stock_info_service
 import datetime
 from utils.logging_util import Logger
@@ -22,6 +23,6 @@ if __name__ == '__main__':
                 thr = threading.Thread(target=update_stock_info_service.update_daily_data, args=(updated_cb, now))
                 thr.setDaemon(True)
                 thr.start()
-
-        time.sleep(600)
         log.d("Just show a useless log ...")
+        time.sleep(600)
+        

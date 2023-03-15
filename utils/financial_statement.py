@@ -12,6 +12,7 @@ import time
 import sqlalchemy
 import traceback
 from .logging_util import Logger
+from sqlalchemy.orm import Session
 
 log = Logger("financial_statement.py")
 
@@ -382,11 +383,11 @@ def merge_to_sql(conn, name, df):
             # cmd = 'REPLACE INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp`;'
             log.d("Insert table ", name, " with ON DUPLICATE KEY UPDATE.") 
             # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
-            # 如果沒有先call commit會出現error
+            # 如果用conn.execute會出現error
             # 'Table definition has changed, please retry transaction'，不知為何
-            conn.commit()
-            conn.execute(sqlalchemy.text(cmd))
-            conn.commit()
+            session = Session(conn.engine)
+            session.execute(sqlalchemy.text(cmd))
+            session.commit()
             conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
         else:
             df.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
