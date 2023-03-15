@@ -360,16 +360,21 @@ def merge_to_sql(conn, name, df):
             original_col_list = list(original_col_df["Field"])
             new_col_list = list(df.columns)
             duplicate_col_list = []
+            dropped_col_list = []
             for col in new_col_list:
                 if col in original_col_list:
                     duplicate_col_list.append(col)
+                else:
+                    dropped_col_list.append(col)
             df = df[pd.Index(duplicate_col_list)]
             log.d("duplicate_col_list size = ", len(duplicate_col_list), ", ", len(new_col_list) - len(duplicate_col_list), " columns are dropped.")
             log.d(name, " , new size = ", df.shape)
+            log.d("Dropped col list : ", dropped_col_list)
 
             # 存一個暫用的temp table等等合併要用
-            log.d("Save df to temp table.") 
-            df.to_sql("temp", conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+            temp_table = name + "_temp" 
+            log.d("Save df to temp table :" +   temp_table)
+            df.to_sql(temp_table, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
             
 
             # 把temp表格merge回原本的表格後再砍掉temp
@@ -379,7 +384,7 @@ def merge_to_sql(conn, name, df):
                 s1 += ", `" + df.columns[i] + "`" 
                 s2 += ", `" + df.columns[i] + "` = VALUES(`" + df.columns[i] + "`)"
             s2 = s2[1:] # 去掉第一個逗號
-            cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp` ON DUPLICATE KEY UPDATE ' + s2 + ';'
+            cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `' + temp_table + '` ON DUPLICATE KEY UPDATE ' + s2 + ';'
             # cmd = 'REPLACE INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp`;'
             log.d("Insert table ", name, " with ON DUPLICATE KEY UPDATE.") 
             # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
@@ -388,7 +393,7 @@ def merge_to_sql(conn, name, df):
             session = Session(conn.engine)
             session.execute(sqlalchemy.text(cmd))
             session.commit()
-            conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
+            conn.execute(sqlalchemy.text('DROP TABLE `' + temp_table + '`;'))
         else:
             df.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
         log.d(name, " save to db successly.")
@@ -445,7 +450,7 @@ def html2db_single_season(conn, date):
     
     # 把html資料轉成dataframe，下面會回傳一個dict，key就是財報的四個表格的名稱，value就是dataframe
     dfs = pack_htmls(year, season, os.path.join('data', 'financial_statement', str(year) + str(season)))
-    # 這行測試用的，dfs = pd.read_pickle(os.path.join('C:/Users/Daniel/Desktop/invest-stock/data2/data/financial_statement/', 'pack' + str(year) + str(season) + '.pickle'))
+    # 這行測試用的，dfs = pd.read_pickle(os.path.join('/home/ec2-user/invest-stock/data/financial_statement/', 'pack' + str(year) + str(season) + '.pickle'))
     # 第1~3季的income_sheet都在pack_htmls就可以抓到，但第四季的只能另外算
     if season == 4:
         cmd = 'SELECT * FROM income_sheet_cumulate WHERE YEAR(`date`) = \'' + \

@@ -709,8 +709,9 @@ def merge_to_sql(conn, name, df):
                 conn.execute(sqlalchemy.text(cmd))
 
             # 存一個暫用的temp table等等合併要用
-            log.d("Save ret to temp table.") 
-            ret.to_sql("temp", conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
+            temp_table = name + "_temp" 
+            log.d("Save df to temp table :" +   temp_table)
+            df.to_sql(temp_table, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
      
             # 把temp表格merge回原本的表格後再砍掉temp
             s1 = '`stock_id`, `date`' # 取得index name
@@ -719,7 +720,7 @@ def merge_to_sql(conn, name, df):
                 s1 += ", `" + ret.columns[i] + "`" 
                 s2 += ", `" + ret.columns[i] + "` = VALUES(`" + ret.columns[i] + "`)"
             s2 = s2[1:] # 去掉第一個逗號
-            cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `temp` ON DUPLICATE KEY UPDATE ' + s2 + ';'
+            cmd = 'INSERT INTO `' + name + '`(' + s1 + ')' + ' SELECT * FROM `' + temp_table + '` ON DUPLICATE KEY UPDATE ' + s2 + ';'
             log.d("Insert table ", name, "with ON DUPLICATE KEY UPDATE.") 
             # 更動表格資料的相關操作需要commit，像是插入、更新、刪除列之類的
             # 如果用conn.execute會出現error
@@ -727,7 +728,7 @@ def merge_to_sql(conn, name, df):
             session = Session(conn.engine)
             session.execute(sqlalchemy.text(cmd))
             session.commit()
-            conn.execute(sqlalchemy.text('DROP TABLE `temp`;'))
+            conn.execute(sqlalchemy.text('DROP TABLE `' + temp_table + '`;'))
         else:
             ret.to_sql(name, conn.engine, if_exists='replace', dtype={'stock_id':sqlalchemy.types.VARCHAR(30)})
         log.d("Insert data to sql success.")
