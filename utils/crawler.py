@@ -390,7 +390,7 @@ def crawl_price(date):
 
 def crawl_monthly_report(date):
 
-    url = 'https://mops.twse.com.tw/nas/t21/sii/t21sc03_'+str(date.year - 1911)+'_'+str(date.month)+'.html'
+    url = 'https://mops.twse.com.tw/nas/t21/sii/t21sc03_'+str(date.year - 1911)+'_'+str(date.month -1)+'.html'
     log.d(url)
 
     # 偽瀏覽器
@@ -434,9 +434,8 @@ def crawl_monthly_report(date):
     df = df[~df['當月營收'].isnull()]
     df = df[df['公司代號'] != '合計']
 
-    next_month = datetime.date(date.year + int(date.month / 12), ((date.month % 12) + 1), 10)
-    df['date'] = pd.to_datetime(next_month)
-
+    df['date'] = pd.to_datetime(datetime.date(date.year + int(date.month / 12), ((date.month % 12)), 15))
+    
     df = df.rename(columns={'公司代號':'stock_id'})
     df = df.set_index(['stock_id', 'date'])
     df = df.apply(lambda s:pd.to_numeric(s, errors='coerce'))
