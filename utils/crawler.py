@@ -843,7 +843,7 @@ def update_monthly_revenue_table(conn, dates):
 # 還沒改之前先不要亂用這個好了
 def update_finance_statement_table(conn, dates):
     if len(dates) == 0:
-        log.d("There is no data between dates.")
+        log.d("finance_statement, There is no data between dates.")
         return
 
     log.d('start crawl finance_statement from ', dates[0] , ' to ', dates[-1])
